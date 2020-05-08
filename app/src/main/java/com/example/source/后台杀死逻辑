@@ -1,0 +1,123 @@
+
+  ###  为什么Fragment没有无参构造方法会引发崩溃
+
+  看下FragmentActivity中onCreate代码
+
+    FragmentActivity # onCreate()
+
+   /**
+     * Perform initialization of all fragments.
+     */
+    @SuppressWarnings("deprecation")
+    @Override
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
+        //FragmentController mFragments
+        mFragments.attachHost(null /*parent*/);
+
+        if (savedInstanceState != null) {
+            Parcelable p = savedInstanceState.getParcelable(FRAGMENTS_TAG);
+            //
+            mFragments.restoreSaveState(p);
+        }
+
+    }
+
+
+    FragmentController # restoreSaveState()
+
+  /**
+     * Restores the saved state for all Fragments.
+     *
+     * @param state the saved state containing the Parcelable returned by {@link #saveAllState()}
+     * @see #saveAllState()
+     */
+    public void restoreSaveState(@Nullable Parcelable state) {
+        if (!(mHost instanceof ViewModelStoreOwner)) {
+            throw new IllegalStateException("Your FragmentHostCallback must implement "
+                    + "ViewModelStoreOwner to call restoreSaveState(). Call restoreAllState() "
+                    + " if you're still using retainNestedNonConfig().");
+        }
+        // 恢复Fragment状态
+        mHost.mFragmentManager.restoreSaveState(state);
+    }
+
+
+   FragmentManagerImpl # restoreSaveState()
+
+       void restoreSaveState(Parcelable state) {
+            mActive.clear();
+            for (FragmentState fs : fms.mActive) {
+                if (fs != null) {
+                //创建Fragment对象
+                    Fragment f = fs.instantiate(mHost.getContext().getClassLoader(),getFragmentFactory());
+                    f.mFragmentManager = this;
+                    mActive.put(f.mWho, f);
+                    fs.mInstance = null;
+                }
+            }
+        }
+
+   FragmentState#instantiate()
+
+     public Fragment instantiate(@NonNull ClassLoader classLoader,
+               @NonNull FragmentFactory factory) {
+           if (mInstance == null) {
+               if (mArguments != null) {
+                   mArguments.setClassLoader(classLoader);
+               }
+
+              //FragmentFactory # instantiate()  创建Fragment对象
+               mInstance = factory.instantiate(classLoader, mClassName);
+               mInstance.setArguments(mArguments);
+
+               if (mSavedFragmentState != null) {
+                   mSavedFragmentState.setClassLoader(classLoader);
+                   mInstance.mSavedFragmentState = mSavedFragmentState;
+               } else {
+                   // When restoring a Fragment, always ensure we have a
+                   // non-null Bundle so that developers have a signal for
+                   // when the Fragment is being restored
+                   mInstance.mSavedFragmentState = new Bundle();
+               }
+               mInstance.mWho = mWho;
+               mInstance.mFromLayout = mFromLayout;
+               mInstance.mRestored = true;
+               mInstance.mFragmentId = mFragmentId;
+               mInstance.mContainerId = mContainerId;
+               mInstance.mTag = mTag;
+               mInstance.mRetainInstance = mRetainInstance;
+               mInstance.mRemoving = mRemoving;
+               mInstance.mDetached = mDetached;
+               mInstance.mHidden = mHidden;
+               mInstance.mMaxState = Lifecycle.State.values()[mMaxLifecycleState];
+
+
+           }
+           return mInstance;
+       }
+
+       FragmentFactory # instantiate()
+         @NonNull
+           public Fragment instantiate(@NonNull ClassLoader classLoader, @NonNull String className) {
+               try {
+                   Class<? extends Fragment> cls = loadFragmentClass(classLoader, className);
+                   return cls.getConstructor().newInstance();
+               } catch (java.lang.InstantiationException e) {
+                   throw new Fragment.InstantiationException("Unable to instantiate fragment " + className
+                           + ": make sure class name exists, is public, and has an"
+                           + " empty constructor that is public", e);
+               } catch (IllegalAccessException e) {
+                   throw new Fragment.InstantiationException("Unable to instantiate fragment " + className
+                           + ": make sure class name exists, is public, and has an"
+                           + " empty constructor that is public", e);
+               } catch (NoSuchMethodException e) {
+                   throw new Fragment.InstantiationException("Unable to instantiate fragment " + className
+                           + ": could not find Fragment constructor", e);
+               } catch (InvocationTargetException e) {
+                   throw new Fragment.InstantiationException("Unable to instantiate fragment " + className
+                           + ": calling Fragment constructor caused an exception", e);
+               }
+           }
+
+
+   ### 为什么出现两个 Fragment
